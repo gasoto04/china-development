@@ -1,0 +1,1467 @@
+---
+title: "China in the Development World"
+subtitle: "Irene Chen, Crystal Yixin Luo, Vaishnavi Singh, Gabriel Soto, Tian Tong"
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    toc-title: "Table of Contents"
+editor: visual
+---
+
+# Introduction
+
+This project analyzes China's development finance investments through multiple analytical lenses, including sectoral distributions, geographical patterns, and temporal trends. While the core dataset tracks financial investments and funding flows, our analysis extends beyond purely monetary aspects to understand the broader patterns and characteristics of these development projects.
+
+```{r}
+#| warning: false
+library(here)
+library(sf)
+library(leaflet)
+library(tidyverse)
+library(readxl)
+library(shiny)
+library(dplyr)
+library(plotly)
+library(DT)
+library(tidyr)
+library(ggiraph)
+library(ggplot2)
+library(patchwork)
+```
+
+## 1. Data Importing
+
+### 1.1 Load and filter the original dataset
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, error=FALSE}
+# importing data
+df <- read_excel("data/AidDatasGlobalChineseDevelopmentFinanceDataset_v3.0.xlsx", 
+                 sheet = "GCDF_3.0", 
+                 col_names = TRUE)
+df <- as.data.frame(df)
+
+#class(df)
+#head(df)
+#str(df)
+#typeof(df)
+```
+
+```{r}
+#getting specific columns
+df_filtered <- df %>% select(
+  "AidData Record ID", "Financier Country", "Recipient", 
+  "Recipient Region", "Commitment Year", "Completion Year",
+  "Title", "Description", "Status", "Intent", 
+  "Flow Type Simplified", "Flow Class", "Sector Name",
+  "Infrastructure", "Funding Agencies Type",
+  "Implementing Agencies Type",
+  "Adjusted Amount (Constant USD 2021)",
+  "Location Narrative", "OECD ODA Income Group",
+  "Geographic Level of Precision Available",
+  "Geospatial Feature Available",
+  "Interest Rate",  # Added
+  "Grace Period"
+)
+
+
+#filtering to get 961 projects with geospatial features
+df_filtered <- df_filtered %>% 
+  filter(`Flow Class` != "Vague (Official Finance)",
+         `Adjusted Amount (Constant USD 2021)` > 100000000.00,
+         `Geographic Level of Precision Available` == "Precise",
+         `Geospatial Feature Available` == "Yes")
+```
+
+### 1.2 Load and process the GeoJSON files
+
+#### loads individual GeoJSON files into a list
+
+```{r}
+# Absolute path to directory
+geojson_dir <- "./data-spatial"
+
+# Get file paths
+geojson_files <- list.files(path = geojson_dir, pattern = "\\.(geojson|GeoJSON|json)$", full.names = TRUE)
+
+geojson_files <- list.files(path = geojson_dir, pattern = "\\.geojson$", full.names = TRUE)
+
+# Read files into list
+geojson_list <- lapply(geojson_files, st_read, quiet = TRUE)
+names(geojson_list) <- basename(geojson_files)
+```
+
+#### matches GeoJSON features with AidData records and adds properties
+
+```{r}
+# Iterate and add properties
+geojson_list <- lapply(geojson_list, function(geojson) {
+  # Get the GeoJSON's unique identifier (assumes it's in a column `id`)
+  geo_id <- geojson$id[1]  # Replace with the actual name of your `id` field
+
+  # Match the row in `df`
+  matched_row <- df_filtered %>% filter(`AidData Record ID` == geo_id)
+
+  # Add the properties if a match is found
+  if (nrow(matched_row) > 0) {
+    geojson$Title <- matched_row$Title
+    geojson$Amount <- matched_row$Amount
+    geojson$Status <- matched_row$Status
+    geojson$`Recipient Region` <- matched_row$`Recipient Region`
+    geojson$Description <- matched_row$Description
+    geojson$Intent <- matched_row$Intent
+    geojson$`Flow Type Simplified` <- matched_row$`Flow Type Simplified`
+    geojson$`Flow Class` <- matched_row$`Flow Class`
+    geojson$`Funding Agencies Type` <- matched_row$`Funding Agencies Type`
+    geojson$`Implementing Agencies Type` <- matched_row$`Implementing Agencies Type`
+    geojson$`Location Narrative` <- matched_row$`Location Narrative`
+    geojson$`OECD ODA Income Group` <- matched_row$`OECD ODA Income Group`
+
+
+  } else {
+    # If no match, assign default or NA
+    geojson$Title <- NA
+    geojson$Amount <- NA
+    geojson$Status <- NA
+    geojson$`Recipient Region` <- NA
+    geojson$Description <- NA
+    geojson$Intent <- NA
+    geojson$`Flow Type Simplified` <- NA
+    geojson$`Flow Class` <- NA
+    geojson$`Funding Agencies Type` <- NA
+    geojson$`Implementing Agencies Type` <- NA
+    geojson$`Location Narrative` <- NA
+    geojson$`OECD ODA Income Group` <- NA
+  }
+
+  return(geojson)
+})
+```
+
+#### Combining and Fixing Geometries:
+
+```{r}
+combined_geojson <- do.call(rbind, geojson_list) %>%
+  st_make_valid() %>%
+  # Add coordinate check
+  {
+    invalid_geoms <- st_is_valid(., reason = TRUE)
+    print(paste("Invalid geometries found:", sum(invalid_geoms != "Valid Geometry")))
+    .
+  } %>%
+  # Remove any remaining invalid geometries
+  filter(st_is_valid(.)) %>%
+  # Ensure proper CRS
+  st_transform(4326)
+
+# Print summary for verification
+print(paste("Total features:", nrow(combined_geojson)))
+print(paste("Unique regions:", length(unique(combined_geojson$`Recipient Region`))))
+```
+
+## 2. Creating Interactive Plots
+
+### 2.1 Interactive line Plots
+
+```{r}
+# Calculate yearly averages
+yearly_metrics <- df_filtered %>%
+  group_by(`Commitment Year`) %>%
+  summarise(
+    avg_interest_rate = mean(`Interest Rate`, na.rm = TRUE),
+    avg_grace_period = mean(`Grace Period`, na.rm = TRUE),
+    project_count = n()
+  ) %>%
+  filter(!is.na(`Commitment Year`)) # Remove any NA years
+```
+
+```{r}
+
+# Create a data frame with Chinese domestic interest rates for the relevant years
+chinese_rates <- data.frame(
+  year = c(2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
+           2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021),
+  rate = c(3.24, 3.24, 2.70, 2.70, 3.33, 3.33, 3.33, 3.33, 3.9375, 2.79, 2.8283,
+           3.25, 3.25, 3.25, 3.25, 2.90, 2.90, 2.90, 2.90, 2.90, 2.90, 2.90)
+)
+
+# Create the plot with modified x-axis settings
+p <- plot_ly(yearly_metrics, x = ~`Commitment Year`) %>%
+  # Add the main interest rate trace
+  add_trace(
+    y = ~avg_interest_rate,
+    name = 'Interest Rate',
+    type = 'scatter',
+    mode = 'lines+markers',
+    line = list(color = '#8884d8'),
+    marker = list(color = '#8884d8', size = 8),
+    hovertemplate = paste(
+      "Year: %{x}<br>",
+      "Interest Rate: %{y:.2f}%<br>",
+      "<extra></extra>"
+    )
+  ) %>%
+  # Add the grace period trace
+  add_trace(
+    y = ~avg_grace_period,
+    name = 'Grace Period',
+    type = 'scatter',
+    mode = 'lines+markers',
+    line = list(color = '#82ca9d'),
+    marker = list(color = '#82ca9d', size = 8),
+    hovertemplate = paste(
+      "Year: %{x}<br>",
+      "Grace Period: %{y:.2f} years<br>",
+      "<extra></extra>"
+    )
+  ) %>%
+  # Add Chinese domestic interest rate line
+  add_trace(
+    data = chinese_rates,
+    x = ~year,
+    y = ~rate,
+    name = 'China Domestic Rate',
+    type = 'scatter',
+    mode = 'lines',
+    line = list(color = '#FF6B6B', dash = 'dot'),
+    hovertemplate = paste(
+      "Year: %{x}<br>",
+      "Domestic Rate: %{y:.2f}%<br>",
+      "<extra></extra>"
+    )
+  ) %>%
+  # Configure the layout with modified x-axis settings
+  layout(
+    title = list(
+      text = 'Average Interest Rate and Grace Period by Commitment Year',
+      x = 0.5,
+      y = 0.95,
+      font = list(size = 20)
+    ),
+    xaxis = list(
+      title = 'Commitment Year',
+      gridcolor = '#E2E2E2',
+      showgrid = TRUE,
+      # Set tick marks every 2 years from 2000 to 2021
+      tickmode = "array",
+      tickvals = seq(2000, 2021, by = 2),
+      ticktext = as.character(seq(2000, 2021, by = 2))
+    ),
+    yaxis = list(
+      title = 'Years / Percentage',
+      gridcolor = '#E2E2E2',
+      showgrid = TRUE,
+      range = c(0, 7)
+    ),
+    legend = list(
+      title = list(text = 'Metric'),
+      orientation = 'h',
+      y = 1.1,
+      x = 0.5,
+      xanchor = 'center',
+      yanchor = 'bottom'
+    ),
+    margin = list(t = 100),
+    hoverlabel = list(bgcolor = "white"),
+    plot_bgcolor = '#FFFFFF',
+    paper_bgcolor = '#FFFFFF'
+  )
+
+# Display the plot
+p
+```
+
+-   **Interest Rate Trends**:
+
+    Started high around 6.3% in 2000 and showed a general declining trend
+
+    Shows some volatility but less extreme than grace period changes
+
+    Typically remained higher than China's domestic rate until around 2008-2009
+
+-   **Grace Period Patterns**:
+
+    Much more volatile than interest rates, especially in early years
+
+    Shows a slight declining trend in recent years (2015-2020)
+
+### 2.2 Interactive Box Plot
+
+```{r, warning=FALSE}
+# Calculate yearly averages
+df_clean <- df_filtered %>%
+  filter(!is.na('Interest Rate'), 
+         !is.na('Commitment Year'))
+
+year_range <- range(df_clean$`Commitment Year`, na.rm = TRUE)
+all_years <- seq(year_range[1], year_range[2])
+
+yearly_averages <- df_clean %>%
+  group_by(`Commitment Year`) %>%
+  summarise(avg_interest_rate = mean(`Interest Rate`, na.rm = TRUE))
+
+# Create the visualization with both boxplot and average line
+p <- plot_ly() %>%
+  # First add the original boxplot
+  add_boxplot(
+    data = df_clean,
+    x = ~`Commitment Year`,
+    y = ~`Interest Rate`,
+    name = 'Interest Rate Distribution',
+    boxpoints = 'all',    
+    jitter = 0,           
+    pointpos = 0,         
+    marker = list(
+      color = '#8884d8',  
+      opacity = 0.6,      
+      size = 7           
+    ),
+    line = list(color = '#8884d8'),  
+    fillcolor = 'rgba(136, 132, 216, 0.2)'  
+  ) %>%
+  # Add the average line
+  add_trace(
+    data = yearly_averages,
+    x = ~`Commitment Year`,
+    y = ~avg_interest_rate,
+    type = 'scatter',
+    mode = 'lines',
+    name = 'Yearly Average',
+    line = list(
+      color = 'red',
+      width = 2
+    )
+  ) %>%
+  layout(
+    title = list(
+      text = 'Distribution of Project Interest Rates by Commitment Year',
+      x = 0.5,
+      y = 0.95,
+      font = list(size = 20)
+    ),
+    xaxis = list(
+      title = 'Commitment Year',
+      gridcolor = '#E2E2E2',
+      showgrid = TRUE,
+      tickmode = "array",
+      tickvals = all_years,
+      ticktext = as.character(all_years),
+      tickangle = 45,
+      tickfont = list(size = 10)
+    ),
+    yaxis = list(
+      title = 'Interest Rate (%)',
+      gridcolor = '#E2E2E2',
+      showgrid = TRUE,
+      zeroline = TRUE,
+      zerolinecolor = '#969696',
+      zerolinewidth = 1
+    ),
+    margin = list(
+      t = 100,  
+      b = 120,  
+      l = 80,   
+      r = 50    
+    ),
+    showlegend = TRUE,    # Changed to TRUE to show the line in legend
+    plot_bgcolor = '#FFFFFF',
+    paper_bgcolor = '#FFFFFF'
+  )
+
+# Display the plot
+p
+```
+
+-   **Structural Break in 2000-2001:**
+
+    Sharp decline from 6% to 4%, marking a clear policy shift. After this drop, rates stabilized and never returned to pre-2001 levels
+
+-   **Long-term Stability (2001-2021):**
+
+    Average interest rates consistently maintained between 2-4%. Shows China's sustained commitment to relatively low-cost financing
+
+-   **Consistent Rate Structure:**
+
+    Most project rates cluster around 2-4%, suggesting a standardized lending approach with occasional special cases.
+
+### 2.3 Interactive Linked Scatter plot with Python
+
+## 3. Creating plots with Shiny App
+
+### 3.1 Creating Comprehensive Overview Dashboard
+
+-   Using the original polygons instead of circled markers
+
+-   Adding a tab for Analysis with: (a) a Barplot to show *Sector-wise* distribution; (b) a Pie Chart to show *project status* distribution
+
+-   Adding a **stacked bar plot** to show ***Regional Variation*** across sectors
+
+-   Adding a tab for Data table (allowing filter selection)
+
+    <https://yc1171.shinyapps.io/shiny-2/>
+
+    Combined dashboards:
+
+    <https://yt583-tian.shinyapps.io/china-development/>
+
+```{r}
+#| echo: true
+#| eval: false
+# UI
+ui <- fluidPage(
+  titlePanel("China Development Finance Projects"),
+  
+  sidebarLayout(
+    sidebarPanel(width = 3,
+                 selectInput("region_filter",
+                             "Filter by Region:",
+                             choices = c("All", sort(unique(combined_geojson$`Recipient Region`)))),
+                 
+                 selectInput("sector_filter",
+                             "Filter by Sector:",
+                             choices = c("All", sort(unique(combined_geojson$Sector.Name)))),
+                 
+                 checkboxGroupInput("status_filter",
+                                    "Project Status:",
+                                    choices = sort(unique(combined_geojson$Status))),
+                 
+                 sliderInput("amount_filter",
+                             "Investment Amount (USD Millions):",
+                             min = 0,
+                             max = 10000, # Natural limit for better display
+                             value = c(0, 10000), # Default slider range
+                             step = 1),
+                 
+                 actionButton("reset", "Reset Filters", class = "btn-primary")
+    ),
+    
+    mainPanel(width = 9,
+              fluidRow(
+                column(4, 
+                       div(class = "well well-sm",
+                           h4("Total Projects"),
+                           textOutput("total_projects"))),
+                column(4, 
+                       div(class = "well well-sm",
+                           h4("Total Investment (USD Billions)"),
+                           textOutput("total_investment"))),
+                column(4, 
+                       div(class = "well well-sm",
+                           h4("Average Project Size (USD Millions)"),
+                           textOutput("avg_project")))
+              ),
+              
+              tabsetPanel(
+                tabPanel("Map View", leafletOutput("map", height = "600px")),
+                tabPanel("Analysis",
+                         fluidRow(
+                           column(6, plotlyOutput("sector_plot")),
+                           column(6, plotlyOutput("status_plot"))
+                         ),
+                         plotlyOutput("regional_plot")),
+                tabPanel("Data Table", DTOutput("project_table"))
+              )
+    )
+  )
+)
+
+# Server
+server <- function(input, output, session) {
+  
+  # Reset button functionality
+  observeEvent(input$reset, {
+    updateSelectInput(session, "region_filter", selected = "All")
+    updateSelectInput(session, "sector_filter", selected = "All")
+    updateCheckboxGroupInput(session, "status_filter", selected = character(0))
+    updateSliderInput(session, "amount_filter", 
+                      min = 0,
+                      max = 10000, # Reset to default limits
+                      value = c(0, 10000))
+  })
+  
+  # Reactive data based on filters
+  filtered_data <- reactive({
+    data <- combined_geojson
+    
+    if (input$region_filter != "All") {
+      data <- data %>% filter(`Recipient Region` == input$region_filter)
+    }
+    if (input$sector_filter != "All") {
+      data <- data %>% filter(Sector.Name == input$sector_filter)
+    }
+    if (length(input$status_filter) > 0) {
+      data <- data %>% filter(Status %in% input$status_filter)
+    }
+    data <- data %>%
+      filter(Amount..Constant.USD.2021./1e6 >= input$amount_filter[1],
+             Amount..Constant.USD.2021./1e6 <= input$amount_filter[2])
+    
+    validate(
+      need(nrow(data) > 0, "No projects match the selected filters")
+    )
+    data
+  })
+  
+  # Map
+  output$map <- renderLeaflet({
+    req(filtered_data())
+    pal <- colorFactor(palette = "viridis", domain = unique(filtered_data()$Sector.Name))
+    
+    leaflet(filtered_data()) %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      addPolygons(
+        fillColor = ~pal(Sector.Name),
+        color = ~pal(Sector.Name),
+        weight = 2,
+        opacity = 1,
+        fillOpacity = 0.7,
+        highlightOptions = highlightOptions(
+          weight = 3,
+          color = "white",
+          fillOpacity = 1,
+          bringToFront = TRUE
+        ),
+        popup = ~paste0(
+          "<strong>Title:</strong> ", Title, "<br>",
+          "<strong>Amount:</strong> $", formatC(Amount..Constant.USD.2021./1e6, format = "f", digits = 1, big.mark = ","), "M<br>",
+          "<strong>Status:</strong> ", Status, "<br>",
+          "<strong>Sector:</strong> ", Sector.Name
+        ),
+        label = ~Title
+      ) %>%
+      addLegend(
+        position = "bottomright",
+        pal = pal,
+        values = ~Sector.Name,
+        title = "Sectors",
+        opacity = 1
+      ) %>%
+      # Add custom control with zoom instructions
+      addControl(
+        html = '<div style="padding: 6px 8px; font-size: 14px; background: white; 
+              background: rgba(255,255,255,0.8); box-shadow: 0 0 15px rgba(0,0,0,0.2); 
+              border-radius: 5px; line-height: 1.5">
+              <strong>Map Instructions:</strong><br>
+              • Zoom in significantly to see detailed project shapes<br>
+              • Projects show actual footprints (e.g., factory layouts, infrastructure corridors)<br>
+              • Use mouse wheel or +/- buttons to zoom<br>
+              • Click on shapes for project details
+              </div>',
+        position = "topleft"
+      ) %>%
+      # Set a slightly zoomed-in initial view
+      setView(lng = 0, lat = 20, zoom = 3)
+  })
+  
+  # Sector plot
+  output$sector_plot <- renderPlotly({
+    sector_data <- filtered_data() %>%
+      st_drop_geometry() %>%
+      group_by(Sector.Name) %>%
+      summarise(Total = sum(Amount..Constant.USD.2021./1e6, na.rm = TRUE)) %>%
+      arrange(desc(Total))
+    
+    plot_ly(
+      data = sector_data,
+      x = ~Total,
+      y = ~reorder(Sector.Name, Total),
+      type = 'bar',
+      orientation = 'h',
+      marker = list(color = "blue")
+    ) %>%
+      layout(
+        title = "Top Sectors by Investment",
+        xaxis = list(title = "Investment (USD Millions)"),
+        yaxis = list(title = ""),
+        showlegend = FALSE
+      )
+  })
+  
+  # Status plot
+  output$status_plot <- renderPlotly({
+    status_data <- filtered_data() %>%
+      st_drop_geometry() %>%
+      group_by(Status) %>%
+      summarise(Count = n()) %>%
+      mutate(Percentage = Count/sum(Count) * 100)
+    
+    plot_ly(
+      data = status_data,
+      labels = ~Status,
+      values = ~Count,
+      type = "pie",
+      textinfo = "label+percent",
+      marker = list(colors = c("#2ecc71", "#3498db", "#e74c3c"))
+    ) %>%
+      layout(
+        title = "Project Status Distribution",
+        showlegend = TRUE
+      )
+  })
+  
+  # Regional Distribution Plot
+  output$regional_plot <- renderPlotly({
+    regional_data <- filtered_data() %>%
+      st_drop_geometry() %>%
+      group_by(`Recipient Region`, Sector.Name) %>%
+      summarise(TotalInvestment = sum(Amount..Constant.USD.2021., na.rm = TRUE)) %>%
+      arrange(desc(TotalInvestment))
+    
+    plot_ly(
+      data = regional_data,
+      x = ~`Recipient Region`,
+      y = ~TotalInvestment / 1e6,
+      type = 'bar',
+      color = ~Sector.Name,
+      colors = viridis::viridis_pal(option = "D")(length(unique(regional_data$Sector.Name))),
+      text = ~paste(
+        "Region:", `Recipient Region`, "<br>",
+        "Sector:", Sector.Name, "<br>",
+        "Investment:", scales::comma(TotalInvestment / 1e6, suffix = "M")
+      ),
+      hoverinfo = "text"
+    ) %>%
+      layout(
+        title = "Regional Distribution of Investments by Sector",
+        xaxis = list(title = "Region"),
+        yaxis = list(title = "Investment (USD Millions)"),
+        barmode = "stack",
+        font = list(size = 12) # Improved font size for clarity
+      )
+  })
+  
+  # Summary statistics
+  output$total_projects <- renderText({
+    nrow(filtered_data())
+  })
+  
+  output$total_investment <- renderText({
+    total <- sum(filtered_data()$Amount..Constant.USD.2021., na.rm = TRUE) / 1e9
+    paste0("$", formatC(total, format = "f", digits = 1, big.mark = ","), "B")
+  })
+  
+  output$avg_project <- renderText({
+    avg <- mean(filtered_data()$Amount..Constant.USD.2021., na.rm = TRUE) / 1e6
+    paste0("$", formatC(avg, format = "f", digits = 1, big.mark = ","), "M")
+  })
+  
+  # Data table with improved formatting
+  output$project_table <- renderDT({
+    data <- filtered_data() %>% st_drop_geometry()
+    
+    datatable(
+      data,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        autoWidth = FALSE,
+        columnDefs = list(
+          # For ID, feature count, and ISO codes - very short
+          list(
+            targets = c("id", "feature_count", "Recipient.ISO.3", "Status", 
+                        "Infrastructure", "Flow Class", "Flow Type Simplified"),
+            width = "80px",
+            render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null) {
+                return data.toString();
+              }
+              return data;
+            }")
+          ),
+          # For dates - no truncation
+          list(
+            targets = c("Commitment.Date..MM.DD.YYYY.",
+                        "Actual.Implementation.Start.Date..MM.DD.YYYY.",
+                        "Actual.Completion.Date..MM.DD.YYYY.",
+                        "Commitment.Year", "Implementation.Start.Year",
+                        "Completion.Year"),
+            width = "120px",
+            render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null) {
+                return data.toString();
+              }
+              return data;
+            }")
+          ),
+          # For text-heavy columns
+          list(
+            targets = c("Title", "Description", "Location Narrative"),
+            width = "300px",
+            render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null && data.length > 100) {
+                return data.toString().substr(0, 100) + '...';
+              }
+              return data;
+            }")
+          ),
+          # Default for remaining columns
+          list(
+            targets = "_all",
+            width = "150px",
+            render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null && data.length > 50) {
+                return data.toString().substr(0, 50) + '...';
+              }
+              return data;
+            }")
+          )
+        )
+      ),
+      rownames = FALSE,
+      class = 'stripe',  # Removed 'compact' class
+      selection = 'none'
+    ) %>%
+      formatStyle(
+        columns = colnames(data),
+        fontSize = '13px',
+        lineHeight = '1.4',
+        padding = '8px',
+        height = '80px',  # Increased row height
+        backgroundColor = 'white',
+        whiteSpace = 'normal'  # Allow text wrapping
+      ) %>%
+      formatCurrency(
+        columns = "Amount..Constant.USD.2021.",
+        currency = "$",
+        digits = 0
+      )
+  })
+}
+
+# Run the Shiny app
+shinyApp(ui = ui, server = server)
+```
+
+### 3.2 Creating OECD ODA Income Group Dashboard
+
+<https://yl1652.shinyapps.io/china-development-new/>
+
+```{r}
+#| echo: true
+#| eval: false
+
+library(shiny)
+library(dplyr)
+library(leaflet)
+library(plotly)
+library(sf)
+library(viridis)
+library(tidyr)
+
+# UI
+ui <- fluidPage(
+  titlePanel("OECD ODA Income Group Dashboard"),
+  
+  sidebarLayout(
+    sidebarPanel(width = 3,
+                 div(class = "well well-sm",
+                     h4("Total Projects"),
+                     textOutput("total_projects")),
+                 div(class = "well well-sm",
+                     h4("Total Investment (USD Billions)"),
+                     textOutput("total_investment")),
+                 selectInput("income_group_filter",
+                             "Filter by Income Group:",
+                             choices = c("All", unique(na.omit(combined_geojson$`OECD ODA Income Group`)))),
+                 sliderInput("amount_filter",
+                             "Investment Amount (USD Millions):",
+                             min = 0,
+                             max = ceiling(max(combined_geojson$Amount..Constant.USD.2021./1e6, na.rm = TRUE)/4000)*4000,
+                             step = 4000,
+                             value = c(0, ceiling(max(combined_geojson$Amount..Constant.USD.2021./1e6, na.rm = TRUE)/4000)*4000)),
+                 selectInput("year_filter",
+                             "Filter by Completion Year:",
+                             choices = sort(unique(as.character(combined_geojson$Completion.Year))),
+                             selected = NULL,
+                             multiple = TRUE)
+    ),
+    
+    mainPanel(width = 9,
+              # Introduction Section
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("1. Introduction"),
+                           p("This OECD ODA Income Group Dashboard provides an interactive visualization of Official Development Assistance (ODA) projects. 
+                   The dashboard highlights project distribution, investment amounts, and income group categorizations globally. Users can filter projects by 
+                   completion year and income group to explore trends and patterns in ODA funding.")
+                       )
+                )
+              ),
+              # Belt and Road Initiative Section
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("2. Belt and Road Initiative Context"),
+                           p("The Belt and Road Initiative (BRI) was launched in 2013 by Chinese President Xi Jinping. It aims to enhance global trade and 
+                   infrastructure connectivity through the Silk Road Economic Belt and the 21st Century Maritime Silk Road."),
+                           p("Project Overview:"),
+                           tags$ul(
+                             tags$li("2000–2013: Total projects = 171"),
+                             tags$li("2013–2023: Total projects = 479")
+                           )
+                       )
+                )
+              ),
+              # Bar Chart Description
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("3. Bar Chart"),
+                           p("Visualizes the total investment (in USD millions) segmented by different income group categories. The bars provide a clear comparison 
+                   of funding allocation across income groups.")
+                       )
+                )
+              ),
+              # Bar Chart Plot
+              fluidRow(
+                column(12, plotlyOutput("income_group_plot", height = "400px", width = "100%"))
+              ),
+              # Map Description
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("Interactive Map"),
+                           p("Geographical representation of project locations worldwide. Interactive tooltips provide detailed information for individual projects, such as:"),
+                           tags$ul(
+                             tags$li("Title: Project name or description."),
+                             tags$li("Amount: The financial investment in the project."),
+                             tags$li("Income Group: The income group classification for the project's target region.")
+                           )
+                       )
+                )
+              ),
+              # Map
+              fluidRow(
+                column(12, leafletOutput("map", height = "600px"))
+              )
+    )
+  )
+)
+
+# Server
+server <- function(input, output, session) {
+  
+  # Reactive filtered data
+  filtered_data <- reactive({
+    data <- combined_geojson %>%
+      filter(!is.na(`OECD ODA Income Group`))  # Exclude NA values
+    
+    # Income group filter
+    if (input$income_group_filter != "All") {
+      data <- data %>%
+        filter(`OECD ODA Income Group` == input$income_group_filter)
+    }
+    
+    # Investment amount filter
+    data <- data %>%
+      filter(Amount..Constant.USD.2021./1e6 >= input$amount_filter[1],
+             Amount..Constant.USD.2021./1e6 <= input$amount_filter[2])
+    
+    # Year filter
+    if (!is.null(input$year_filter) && length(input$year_filter) > 0) {
+      data <- data %>%
+        filter(as.character(Completion.Year) %in% input$year_filter)
+    }
+    
+    return(data)
+  })
+  
+  # Income group plot
+  output$income_group_plot <- renderPlotly({
+    group_data <- filtered_data() %>%
+      st_drop_geometry() %>%
+      group_by(`OECD ODA Income Group`) %>%
+      summarise(Total = sum(Amount..Constant.USD.2021./1e6, na.rm = TRUE)) %>%
+      tidyr::complete(`OECD ODA Income Group`, fill = list(Total = 0)) %>%
+      arrange(desc(Total)) %>%
+      mutate(Short_Label = case_when(  # Shorten labels for x-axis
+        `OECD ODA Income Group` == "Low income" ~ "Low",
+        `OECD ODA Income Group` == "Lower middle income" ~ "Lower Middle",
+        `OECD ODA Income Group` == "Upper middle income" ~ "Upper"
+      ))
+    
+    # Calculate max for buffer space
+    y_max <- max(group_data$Total, na.rm = TRUE) * 1.1
+    
+    plot_ly(group_data,
+            x = ~Short_Label,  # Use shortened labels for x-axis
+            y = ~Total,
+            type = "bar",
+            text = ~paste0(round(Total, 1), "M"),
+            textposition = 'outside',
+            hoverinfo = "text",  # Use custom hover text
+            hovertext = ~paste("Income Group:", `OECD ODA Income Group`, "<br>",
+                               "Total Investment:", round(Total, 1), "M USD"),
+            color = ~`OECD ODA Income Group`,
+            colors = viridis::viridis(n_distinct(group_data$`OECD ODA Income Group`), option = "D")) %>%
+      layout(
+        title = "Investment by Income Group",
+        xaxis = list(title = "Income Group", titlefont = list(size = 14), tickangle = 0),
+        yaxis = list(title = "USD Millions", range = c(0, y_max)),
+        margin = list(b = 100, t = 50),  # Adjust margins
+        legend = list(orientation = "h", x = 0, y = -0.4)  # Move legend below the plot
+      )
+  })
+  
+  # Map rendering
+  output$map <- renderLeaflet({
+    req(filtered_data())
+    filtered <- filtered_data()
+    if (nrow(filtered) > 0) {
+      pal <- colorFactor(
+        palette = viridis::viridis(length(unique(filtered$`OECD ODA Income Group`)), option = "D"),
+        domain = unique(filtered$`OECD ODA Income Group`)
+      )
+      
+      leaflet(filtered) %>%
+        addProviderTiles("CartoDB.Positron") %>%
+        addCircleMarkers(
+          lng = st_coordinates(st_centroid(filtered))[,1],
+          lat = st_coordinates(st_centroid(filtered))[,2],
+          radius = 6,
+          color = ~pal(`OECD ODA Income Group`),
+          fillOpacity = 0.7,
+          popup = ~paste0("<strong>Title:</strong> ", Title,
+                          "<br><strong>Amount:</strong> $",
+                          formatC(Amount..Constant.USD.2021./1e6, format="f", digits=1, big.mark=","), "M",
+                          "<br><strong>Income Group:</strong> ", `OECD ODA Income Group`)
+        ) %>%
+        addLegend("bottomright",
+                  pal = pal,
+                  values = ~`OECD ODA Income Group`,
+                  title = "Income Groups")
+    } else {
+      leaflet() %>% addProviderTiles("CartoDB.Positron")
+    }
+  })
+  
+  # Total projects
+  output$total_projects <- renderText({
+    nrow(filtered_data())
+  })
+  
+  # Total investment
+  output$total_investment <- renderText({
+    total <- sum(filtered_data()$Amount..Constant.USD.2021., na.rm = TRUE) / 1e9
+    paste0("$", formatC(total, format="f", digits=1, big.mark=","), "B")
+  })
+}
+
+# Run the Shiny app
+shinyApp(ui = ui, server = server)
+
+```
+
+### 3.3 Creating Combined Shiny App
+
+```{r}
+#| echo: true
+#| eval: false
+ui <- bs4DashPage(
+  bs4DashNavbar(title = "Development Finance Analysis Dashboard"),
+  
+  bs4DashSidebar(
+    bs4SidebarMenu(
+      bs4SidebarMenuItem("China Development Finance", tabName = "china_dashboard", icon = icon("chart-line")),
+      bs4SidebarMenuItem("OECD ODA Analysis", tabName = "oecd_dashboard", icon = icon("globe"))
+    )
+  ),
+  
+  bs4DashBody(
+    bs4TabItems(
+      # China Development Finance Dashboard
+      bs4TabItem(
+        tabName = "china_dashboard",
+        fluidPage(
+          titlePanel("China Development Finance Projects"),
+          sidebarLayout(
+            sidebarPanel(
+              width = 3,
+              selectInput("region_filter", "Filter by Region:",
+                          choices = c("All", sort(unique(combined_geojson$`Recipient Region`)))),
+              selectInput("sector_filter", "Filter by Sector:",
+                          choices = c("All", sort(unique(combined_geojson$Sector.Name)))),
+              checkboxGroupInput("status_filter", "Project Status:",
+                                 choices = sort(unique(combined_geojson$Status))),
+              sliderInput("amount_filter", "Investment Amount (USD Millions):",
+                          min = 0, max = 10000, value = c(0, 10000), step = 1),
+              actionButton("reset", "Reset Filters", class = "btn-primary")
+            ),
+            mainPanel(
+              width = 9,
+              fluidRow(
+                column(4, div(class = "well well-sm", h4("Total Projects"), textOutput("total_projects"))),
+                column(4, div(class = "well well-sm", h4("Total Investment (USD Billions)"), textOutput("total_investment"))),
+                column(4, div(class = "well well-sm", h4("Average Project Size (USD Millions)"), textOutput("avg_project")))
+              ),
+              tabsetPanel(
+                tabPanel("Map View", leafletOutput("map", height = "600px")),
+                tabPanel("Analysis",
+                         fluidRow(
+                           column(6, plotlyOutput("sector_plot")),
+                           column(6, plotlyOutput("status_plot"))
+                         ),
+                         plotlyOutput("regional_plot")),
+                tabPanel("Data Table", DTOutput("project_table"))
+              )
+            )
+          )
+        )
+      ),
+      
+      # OECD ODA Income Group Dashboard
+      bs4TabItem(
+        tabName = "oecd_dashboard",
+        fluidPage(
+          titlePanel("OECD ODA Income Group Dashboard"),
+          sidebarLayout(
+            sidebarPanel(
+              width = 3,
+              div(class = "well well-sm",
+                  h4("Total Projects"),
+                  textOutput("total_projects_oecd")),
+              div(class = "well well-sm",
+                  h4("Total Investment (USD Billions)"),
+                  textOutput("total_investment_oecd")),
+              selectInput("income_group_filter",
+                          "Filter by Income Group:",
+                          choices = c("All", unique(na.omit(combined_geojson$`OECD ODA Income Group`)))),
+              sliderInput("amount_filter",
+                          "Investment Amount (USD Millions):",
+                          min = 0,
+                          max = ceiling(max(combined_geojson$Amount..Constant.USD.2021./1e6, na.rm = TRUE)/4000)*4000,
+                          step = 4000,
+                          value = c(0, ceiling(max(combined_geojson$Amount..Constant.USD.2021./1e6, na.rm = TRUE)/4000)*4000)),
+              selectInput("year_filter",
+                          "Filter by Completion Year:",
+                          choices = sort(unique(as.character(combined_geojson$Completion.Year))),
+                          selected = NULL,
+                          multiple = TRUE)
+            ),
+            mainPanel(
+              width = 9,
+              # Introduction Section
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("1. Introduction"),
+                           p("This OECD ODA Income Group Dashboard provides an interactive visualization of Official Development Assistance (ODA) projects.
+                             The dashboard highlights project distribution, investment amounts, and income group categorizations globally. Users can filter projects by
+                             completion year and income group to explore trends and patterns in ODA funding.")
+                       )
+                )
+              ),
+              # Belt and Road Initiative Section
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("2. Belt and Road Initiative Context"),
+                           p("The Belt and Road Initiative (BRI) was launched in 2013 by Chinese President Xi Jinping. It aims to enhance global trade and
+                             infrastructure connectivity through the Silk Road Economic Belt and the 21st Century Maritime Silk Road."),
+                           p("Project Overview:"),
+                           tags$ul(
+                             tags$li("2000–2013: Total projects = 171"),
+                             tags$li("2013–2023: Total projects = 479")
+                           )
+                       )
+                )
+              ),
+              # Bar Chart Section with Description
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("3. Bar Chart"),
+                           p("Visualizes the total investment segmented by different income group categories.")
+                       )
+                )
+              ),
+              fluidRow(
+                column(12, plotlyOutput("income_group_plot_oecd", height = "400px", width = "100%"))
+              ),
+              # Map Section
+              fluidRow(
+                column(12,
+                       div(class = "description-section",
+                           h4("Interactive Map"),
+                           p("Geographical representation of project locations worldwide.")
+                       )
+                )
+              ),
+              fluidRow(
+                column(12, leafletOutput("map_oecd", height = "600px"))
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+) # Added comma here after the entire ui definition
+
+
+# Server
+server <- function(input, output, session) {
+  
+  # Reset button functionality for China dashboard
+  observeEvent(input$reset, {
+    updateSelectInput(session, "region_filter", selected = "All")
+    updateSelectInput(session, "sector_filter", selected = "All")
+    updateCheckboxGroupInput(session, "status_filter", selected = character(0))
+    updateSliderInput(session, "amount_filter", min = 0, max = 10000, value = c(0, 10000))
+  })
+  
+  # China Dashboard: Reactive filtered data
+  filtered_data_china <- reactive({
+    data <- combined_geojson
+    
+    if (input$region_filter != "All") {
+      data <- data %>% filter(`Recipient Region` == input$region_filter)
+    }
+    if (input$sector_filter != "All") {
+      data <- data %>% filter(Sector.Name == input$sector_filter)
+    }
+    if (length(input$status_filter) > 0) {
+      data <- data %>% filter(Status %in% input$status_filter)
+    }
+    data <- data %>%
+      filter(Amount..Constant.USD.2021./1e6 >= input$amount_filter[1],
+             Amount..Constant.USD.2021./1e6 <= input$amount_filter[2])
+    
+    print(paste("Rows in filtered_data_china:", nrow(data))) # Debugging line
+    return(data)
+  })
+  
+  
+  
+  # Total Projects
+  output$total_projects <- renderText({
+    data <- filtered_data_china()
+    total_projects <- nrow(data)
+    if (total_projects > 0) {
+      total_projects
+    } else {
+      "0"  # Display '0' if no data matches filters
+    }
+  })
+  
+  # Total Investment (in Billions)
+  output$total_investment <- renderText({
+    data <- filtered_data_china()
+    total_investment <- sum(data$Amount..Constant.USD.2021., na.rm = TRUE) / 1e9
+    if (!is.na(total_investment) && total_investment > 0) {
+      paste0("$", formatC(total_investment, format = "f", digits = 2, big.mark = ","), "B")
+    } else {
+      "$0B"
+    }
+  })
+  
+  # Average Project Size (in Millions)
+  output$avg_project <- renderText({
+    data <- filtered_data_china()
+    avg_project <- mean(data$Amount..Constant.USD.2021., na.rm = TRUE) / 1e6
+    if (!is.na(avg_project) && avg_project > 0) {
+      paste0("$", formatC(avg_project, format = "f", digits = 2, big.mark = ","), "M")
+    } else {
+      "$0M"
+    }
+  })
+  
+  output$project_table <- renderDT({
+    # Get the filtered data
+    data <- filtered_data_china() %>% st_drop_geometry()
+    
+    # Add debug print
+    print(paste("Number of rows in data table:", nrow(data)))
+    print("Column names:")
+    print(names(data))
+    
+    if (nrow(data) == 0) {
+      datatable(data.frame(Message = "No data available based on the current filters."),
+                options = list(dom = 't'))
+    } else {
+      datatable(
+        data,
+        options = list(
+          pageLength = 10,
+          scrollX = TRUE,
+          autoWidth = FALSE,
+          columnDefs = list(
+            # For ID, feature count, and ISO codes - very short
+            list(
+              targets = c("id", "feature_count", "Recipient.ISO.3", "Status",
+                          "Infrastructure", "Flow Class", "Flow Type Simplified"),
+              width = "80px",
+              render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null) {
+                return data.toString();
+              }
+              return data;
+            }")
+            ),
+            # For dates
+            list(
+              targets = c("Commitment.Date..MM.DD.YYYY.",
+                          "Actual.Implementation.Start.Date..MM.DD.YYYY.",
+                          "Actual.Completion.Date..MM.DD.YYYY.",
+                          "Commitment.Year", "Implementation.Start.Year",
+                          "Completion.Year"),
+              width = "120px",
+              render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null) {
+                return data.toString();
+              }
+              return data;
+            }")
+            ),
+            # For text-heavy columns
+            list(
+              targets = c("Title", "Description", "Location Narrative"),
+              width = "300px",
+              render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null && data.length > 100) {
+                return data.toString().substr(0, 100) + '...';
+              }
+              return data;
+            }")
+            ),
+            # Default for remaining columns
+            list(
+              targets = "_all",
+              width = "150px",
+              render = JS("
+            function(data, type, row) {
+              if (type === 'display' && data != null && data.length > 50) {
+                return data.toString().substr(0, 50) + '...';
+              }
+              return data;
+            }")
+            )
+          )
+        ),
+        rownames = FALSE,
+        class = 'stripe',
+        selection = 'none'
+      ) %>%
+        formatStyle(
+          columns = colnames(data),
+          fontSize = '13px',
+          lineHeight = '1.4',
+          padding = '8px',
+          height = '80px',
+          backgroundColor = 'white',
+          whiteSpace = 'normal'
+        ) %>%
+        formatCurrency(
+          columns = "Amount..Constant.USD.2021.",
+          currency = "$",
+          digits = 0
+        )
+    }
+  })
+  
+  
+  
+  # Map output
+  # Map with Instructions for China Development Finance Dashboard
+  output$map <- renderLeaflet({
+    req(filtered_data_china())
+    pal <- colorFactor(palette = "viridis", domain = unique(filtered_data_china()$Sector.Name))
+    
+    leaflet(filtered_data_china()) %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      addPolygons(
+        fillColor = ~pal(Sector.Name),
+        color = ~pal(Sector.Name),
+        weight = 2,
+        opacity = 1,
+        fillOpacity = 0.7,
+        highlightOptions = highlightOptions(
+          weight = 3,
+          color = "white",
+          fillOpacity = 1,
+          bringToFront = TRUE
+        ),
+        popup = ~paste0(
+          "<strong>Title:</strong> ", Title, "<br>",
+          "<strong>Amount:</strong> $", formatC(Amount..Constant.USD.2021./1e6, format = "f", digits = 1, big.mark = ","), "M<br>",
+          "<strong>Status:</strong> ", Status, "<br>",
+          "<strong>Sector:</strong> ", Sector.Name
+        ),
+        label = ~Title
+      ) %>%
+      addLegend(
+        position = "bottomright",
+        pal = pal,
+        values = ~Sector.Name,
+        title = "Sectors",
+        opacity = 1
+      ) %>%
+      # Add custom instructions
+      addControl(
+        html = '<div style="padding: 6px 8px; font-size: 14px; background: white; 
+            background: rgba(255,255,255,0.8); box-shadow: 0 0 15px rgba(0,0,0,0.2); 
+            border-radius: 5px; line-height: 1.5">
+            <strong>Map Instructions:</strong><br>
+            • Zoom in significantly to see detailed project shapes<br>
+            • Projects show actual footprints (e.g., factory layouts, infrastructure corridors)<br>
+            • Use mouse wheel or +/- buttons to zoom<br>
+            • Click on shapes for project details
+            </div>',
+        position = "topleft"
+      ) %>%
+      # Set default map view
+      setView(lng = 0, lat = 20, zoom = 3)
+  })
+  
+  
+  # Sector plot
+  output$sector_plot <- renderPlotly({
+    sector_data <- filtered_data_china() %>%
+      st_drop_geometry() %>%
+      group_by(Sector.Name) %>%
+      summarise(Total = sum(Amount..Constant.USD.2021./1e6, na.rm = TRUE)) %>%
+      arrange(desc(Total))
+    
+    plot_ly(sector_data, x = ~Total, y = ~reorder(Sector.Name, Total), type = 'bar', orientation = 'h') %>%
+      layout(title = "Top Sectors by Investment", xaxis = list(title = "Investment (USD Millions)"))
+  })
+  
+  # Status plot
+  output$status_plot <- renderPlotly({
+    status_data <- filtered_data_china() %>%
+      st_drop_geometry() %>%
+      group_by(Status) %>%
+      summarise(Count = n())
+    
+    plot_ly(status_data, labels = ~Status, values = ~Count, type = "pie", textinfo = "label+percent") %>%
+      layout(title = "Project Status Distribution")
+  })
+  
+  # Regional distribution plot
+  output$regional_plot <- renderPlotly({
+    regional_data <- filtered_data_china() %>%
+      st_drop_geometry() %>%
+      group_by(`Recipient Region`, Sector.Name) %>%
+      summarise(TotalInvestment = sum(Amount..Constant.USD.2021., na.rm = TRUE))
+    
+    plot_ly(regional_data, x = ~`Recipient Region`, y = ~TotalInvestment / 1e6, type = 'bar', color = ~Sector.Name) %>%
+      layout(title = "Regional Distribution of Investments by Sector", xaxis = list(title = "Region"), barmode = "stack")
+  })
+  
+  
+  # OECD Dashboard: Reactive filtered data
+  # OECD Dashboard: Reactive filtered data
+  # Filtered data reactive
+  filtered_data_oecd <- reactive({
+    data <- combined_geojson %>%
+      filter(!is.na(`OECD ODA Income Group`))
+    
+    if (input$income_group_filter != "All") {
+      data <- data %>%
+        filter(`OECD ODA Income Group` == input$income_group_filter)
+    }
+    
+    data <- data %>%
+      filter(Amount..Constant.USD.2021./1e6 >= input$amount_filter[1],
+             Amount..Constant.USD.2021./1e6 <= input$amount_filter[2])
+    
+    if (!is.null(input$year_filter) && length(input$year_filter) > 0) {
+      data <- data %>%
+        filter(as.character(Completion.Year) %in% input$year_filter)
+    }
+    
+    return(data)
+  })
+  
+  # Income group plot with improved styling
+  output$income_group_plot_oecd <- renderPlotly({
+    group_data <- filtered_data_oecd() %>%
+      st_drop_geometry() %>%
+      group_by(`OECD ODA Income Group`) %>%
+      summarise(Total = sum(Amount..Constant.USD.2021./1e6, na.rm = TRUE)) %>%
+      tidyr::complete(`OECD ODA Income Group`, fill = list(Total = 0)) %>%
+      arrange(desc(Total)) %>%
+      mutate(Short_Label = case_when(
+        `OECD ODA Income Group` == "Low income" ~ "Low",
+        `OECD ODA Income Group` == "Lower middle income" ~ "Lower Middle",
+        `OECD ODA Income Group` == "Upper middle income" ~ "Upper"
+      ))
+    
+    y_max <- max(group_data$Total, na.rm = TRUE) * 1.1
+    
+    plot_ly(group_data,
+            x = ~Short_Label,
+            y = ~Total,
+            type = "bar",
+            text = ~paste0(round(Total, 1), "M"),
+            textposition = 'outside',
+            hoverinfo = "text",
+            hovertext = ~paste("Income Group:", `OECD ODA Income Group`, "<br>",
+                               "Total Investment:", round(Total, 1), "M USD"),
+            color = ~`OECD ODA Income Group`,
+            colors = viridis::viridis(n_distinct(group_data$`OECD ODA Income Group`), option = "D")) %>%
+      layout(
+        title = "Investment by Income Group",
+        xaxis = list(title = "Income Group", titlefont = list(size = 14), tickangle = 0),
+        yaxis = list(title = "USD Millions", range = c(0, y_max)),
+        margin = list(b = 100, t = 50),
+        legend = list(orientation = "h", x = 0, y = -0.4)
+      )
+  })
+  
+  # Enhanced map with improved tooltips
+  output$map_oecd <- renderLeaflet({
+    req(filtered_data_oecd())
+    filtered <- filtered_data_oecd()
+    
+    if (nrow(filtered) > 0) {
+      pal <- colorFactor(
+        palette = viridis::viridis(length(unique(filtered$`OECD ODA Income Group`)), option = "D"),
+        domain = unique(filtered$`OECD ODA Income Group`)
+      )
+      
+      leaflet(filtered) %>%
+        addProviderTiles("CartoDB.Positron") %>%
+        addCircleMarkers(
+          lng = st_coordinates(st_centroid(filtered))[,1],
+          lat = st_coordinates(st_centroid(filtered))[,2],
+          radius = 6,
+          color = ~pal(`OECD ODA Income Group`),
+          fillOpacity = 0.7,
+          popup = ~paste0("<strong>Title:</strong> ", Title,
+                          "<br><strong>Amount:</strong> $",
+                          formatC(Amount..Constant.USD.2021./1e6, format="f", digits=1, big.mark=","), "M",
+                          "<br><strong>Income Group:</strong> ", `OECD ODA Income Group`)
+        ) %>%
+        addLegend("bottomright",
+                  pal = pal,
+                  values = ~`OECD ODA Income Group`,
+                  title = "Income Groups")
+    } else {
+      leaflet() %>% addProviderTiles("CartoDB.Positron")
+    }
+  })
+  
+  # Update the metrics outputs
+  output$total_projects_oecd <- renderText({
+    nrow(filtered_data_oecd())
+  })
+  
+  output$total_investment_oecd <- renderText({
+    total <- sum(filtered_data_oecd()$Amount..Constant.USD.2021., na.rm = TRUE) / 1e9
+    paste0("$", formatC(total, format="f", digits=1, big.mark=","), "B")
+  })}
+  
+
+# Run the Shiny app
+shinyApp(ui = ui, server = server)
+
+```
