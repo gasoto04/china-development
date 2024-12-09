@@ -28,7 +28,8 @@ This research examines a targeted subset of the AidData dataset, focusing on hig
    - Rendered HTML output: `ppol5202_final_project.html`
 
 ### `data` folder
-#### Raw data `AidDatasGlobalChineseDevelopmentFinanceDataset_v3.0.xlsx`
+#### Raw data 
+`AidDatasGlobalChineseDevelopmentFinanceDataset_v3.0.xlsx`
    - Original dataset from AidData Global Chinese Development Finance Dataset (Version 3.0)
    - Contains comprehensive record of Chinese development projects worldwide
 
