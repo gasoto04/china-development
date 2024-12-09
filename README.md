@@ -58,6 +58,7 @@ This research examines a targeted subset of the AidData dataset, focusing on hig
 
 ## Data Processing and Visualization
 The analysis utilizes R for data processing and visualization, employing packages such as sf for geospatial analysis, leaflet for interactive mapping, and Shiny for dashboard creation. The visualization consists of two main interactive dashboards over shiny apps and three interactive plots of financial terms:
+For interactive plots, it can be archived: https://ppol5202-final-project.netlify.app/
 
 #### 1. Comprehensive Overview Dashboard
 - Interactive map displaying project locations with detailed popup information
