@@ -12,57 +12,52 @@ By Irene Chen, Gabriel Soto, Tian Tong, Vaishnavi Singh, Yixin Luo | Instructor:
 <h2 id="abstract">Introduction</h2>
 This project analyzes China's expanding role in global development finance from 2000-2021, examining strategic investments across 165 low-to-middle income countries. Through analysis of over 20,985 projects valued at approximately $1.34 trillion, this research provides insights into China's development financing patterns and their socioeconomic impacts in recipient nations.
 
-## Data Source
+<!-- Data Source -->
+<h2 id="abstract">Data Source</h2>
 Our analysis draws on the <strong>AidData Global Chinese Development Finance Dataset (Version 3.0)</strong>, curated by the Global Research Institute at William & Mary. This dataset is constructed using the <strong>Tracking Underreported Financial Flows (TUFF)</strong> methodology, which integrates cross-validation from approximately fifty independent sources per project. These sources span a range of institutions, including academic organizations (e.g., Duke University, Harvard University), multilateral development banks (e.g., the World Bank, Asian Development Bank, Inter-American Development Bank), and local entities such as government agencies, media outlets, and think tanks. This rigorous, multi-source verification process enhances the reliability and comprehensiveness of the dataset, making it well-suited for analyzing China’s development finance activities on a global scale.
 
 The full dataset is publicly available via AidData’s <a href="https://www.aiddata.org/data/aiddatas-geospatial-global-chinese-development-finance-dataset-version-3-0">official website</a> and <a href="https://github.com/aiddata/gcdf-geospatial-data">GitHub repository</a>. The filtered datasets used in our analysis—<code>df_filtered</code> and <code>combined_geojson</code>—are available in this project’s repository.
 
-## Methodology
+<!-- Methodology -->
+<h2 id="abstract">Methodlogy</h2>
 This research examines a targeted subset of the AidData dataset, focusing on high-value Chinese development projects with significant socioeconomic impact potential and geospatial precision. By establishing a monetary threshold of $10 million, we concentrate on substantial investments that typically generate measurable socioeconomic effects in recipient countries. Additionally, we restrict our analysis to projects classified under Official Development Assistance (ODA) and Other Official Flows (OOF) definitions, enabling us to examine how China's diplomatic strategy manifests through its development finance initiatives.
 
 ## Scripts
-### `main-amd-python` folder
-#### Python Analysis Files
-1. `ppol5205_final_project.ipynb`
-   - Purpose: Jupyter notebook containing Python analysis code
-   - Rendered HTML output: `ppol5205_final_project_Python.html`
+</p>
+The following structure outlines the organization of scripts, data files, and documentation used throughout the project.
+</p>
 
-#### R Analysis Files
-1. `ppol5202_final_project.qmd`
-   - Purpose: Quarto document containing R analysis code
-   - Rendered HTML output: `ppol5202_final_project.html`
+---
 
-### `data` folder
-#### Raw data 
-`AidDatasGlobalChineseDevelopmentFinanceDataset_v3.0.xlsx`
-   - Original dataset from AidData Global Chinese Development Finance Dataset (Version 3.0)
-   - Contains comprehensive record of Chinese development projects worldwide
+<h3>main-amd-python</h3>
 
-#### Processed Data Files
-1. `df_filtered.csv`
-   - Filtered version of the original dataset, containing projects meeting the $10 million threshold criteria
-   - Used for main analysis in both R and Python scripts
+| Script                         | Language   | Purpose                                                                                       |
+| ------------------------------ | ---------- | --------------------------------------------------------------------------------------------- |
+| `ppol5205_final_project.ipynb` | Python     | Interest rate trends, time series analysis, exploratory data summary (uses `df_filtered.csv`) |
+| `ppol5202_final_project.qmd`   | R / Quarto | Data cleaning, geospatial merging, full visualization, and dashboard development              |
 
-2. `combined_geojson.rds`
-   - R data file containing geographical information, used for mapping visualizations
-   - Combines project data with geographical coordinates
-  
-### `docs` folder
-#### Dataset Documentation
-1. `Field Definitions_GCDF 3.0.pdf`
-   - Contains detailed definitions of all variables in the AidData Global Chinese Development Finance Dataset
-   - Essential reference for understanding data fields and coding schemes
 
-2. `TUFF Methodology 3.0.pdf`
-   - Documentation of the Tracking Underreported Financial Flows (TUFF) methodology
-   - Explains data collection and verification processes used in the dataset
+<h3>data</h3>
 
-#### Project Deliverables
-1. `report-china-development-12-2-24.pdf`
-2. `presentation-china-development-12-2-24.pdf`
-   - Project presentation slides and written report of the project
+| File                                                       | Description                                                           |
+| ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| `AidDatasGlobalChineseDevelopmentFinanceDataset_v3.0.xlsx` | Original raw dataset from AidData Global Chinese Development Finance Dataset (Version 3.0)                                      |
+| `df_filtered.csv`                                          | Cleaned dataset: filtered to projects ≥ \$10M and relevant categories |
+| `combined_geojson.rds`                                     | Merged project-geography data for mapping (used in Shiny apps)        |
 
-## Data Processing and Visualization
+<h3>docs</h3>
+
+| File                                         | Description                                                                                                       |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Field Definitions_GCDF 3.0.pdf`             | Official data dictionary from AidData defining all variables used in the GCDF dataset for coding schemes and understanding                           |
+| `TUFF Methodology 3.0.pdf`                   | Technical overview of the TUFF (Tracking Underreported Financial Flows) data collection and verification process. |
+| `report-china-development-12-2-24.pdf`       | Final written report summarizing methodology, findings, and policy implications of our analysis                  |
+| `presentation-china-development-12-2-24.pdf` | Slide deck used for the final project presentation, highlighting key visualizations and insights                 |
+
+
+
+<!-- Data Processing and Visualization -->
+<h2 id="abstract">Data Processing and Visualization</h2>
 The analysis utilizes R for data processing and visualization, employing packages such as sf for geospatial analysis, leaflet for interactive mapping, and Shiny for dashboard creation. The visualization consists of two main interactive dashboards over shiny apps and three interactive plots of financial terms:
 For interactive plots, it can be archived: https://ppol5202-final-project.netlify.app/
 
@@ -102,9 +97,24 @@ Both available at: https://yt583-tian.shinyapps.io/china-development/
 - Temporal clustering analysis (2010-2017 focus period)
 - Integration of financial health indicators with completion rates
 
-## Requirements
+<!-- Req -->
+<h2 id="abstract">Requirements</h2>
+
 - R version 4.0 or higher
 - Required R packages: shiny, leaflet, dplyr, plotly, DT, sf, tidyr, ggplot2
+- Python version 3.8 or higher
+- Required Python packages: pandas, numpy, seaborn, plotly, bokeh, pip
 - Sufficient RAM for processing GeoJSON files
 - Internet connection for base map rendering
 
+<!-- CONTRIBUTORS -->
+<h2 id="contributors">Contributors</h2>
+
+<p>
+This replication study was completed as part of the Final Project for 
+the course PPOL 5202: Data Visualization for Data Science(Fall 2024)
+ at 
+<a href="https://mccourt.georgetown.edu/">Georgetown University, McCourt School of Public Policy</a>.
+</p>
+
+We gratefully acknowledge the original authors for publicly sharing their data, which made this replication possible. We also appreciate Professor Rebecca Johnson for her invaluable guidance and support throughout the project.
