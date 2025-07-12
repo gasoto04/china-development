@@ -1,16 +1,21 @@
-# China's Development Finance Projects Analysis
-#### Irene Chen,Yixin Crystal Luo, Vaishnavi Singh, Gabriel Soto, Tian Tong
+This repository includes the final project submission for Georgetown University's PPOL 5202: Data Visualization for Data Science, Fall 2024.
 
-## Introduction
+<h1 align="center"> China's Global Development: A Geospatial and Economic Analysis</h1>
+<h3 align="center"> Visualizing Strategic Investments and Lending Trends (2000–2021)</h3>
+
+<p align="center">
+By Irene Chen, Gabriel Soto, Tian Tong, Vaishnavi Singh, Yixin Luo | Instructor: Prof. Rebecca Johnson
+</p>
+
+
+<!-- Introduction -->
+<h2 id="abstract">Introduction</h2>
 This project analyzes China's expanding role in global development finance from 2000-2021, examining strategic investments across 165 low-to-middle income countries. Through analysis of over 20,985 projects valued at approximately $1.34 trillion, this research provides insights into China's development financing patterns and their socioeconomic impacts in recipient nations.
 
 ## Data Source
-Our analysis utilizes AidData's Global Chinese Development Finance Dataset (Version 3.0) from William & Mary's Global Research Institute. This dataset employs the TUFF (Tracking Underreported Financial Flows) methodology, incorporating rigorous verification from approximately fifty distinct sources per project. These sources include academic institutions like Duke and Harvard universities, multilateral organizations such as the World Bank, Asian Development Bank, and Inter-American Development Bank, as well as local stakeholders including think tanks, government agencies, and media outlets.
-This multi-layered verification process ensures the dataset's reliability for analyzing China's global development finance initiatives. The dataset can be accessed through AidData's official website and GitHub repository, with our filtered analysis datasets (df_filtered and combined_geojson) available in our project repository.
+Our analysis draws on the <strong>AidData Global Chinese Development Finance Dataset (Version 3.0)</strong>, curated by the Global Research Institute at William & Mary. This dataset is constructed using the <strong>Tracking Underreported Financial Flows (TUFF)</strong> methodology, which integrates cross-validation from approximately fifty independent sources per project. These sources span a range of institutions, including academic organizations (e.g., Duke University, Harvard University), multilateral development banks (e.g., the World Bank, Asian Development Bank, Inter-American Development Bank), and local entities such as government agencies, media outlets, and think tanks. This rigorous, multi-source verification process enhances the reliability and comprehensiveness of the dataset, making it well-suited for analyzing China’s development finance activities on a global scale.
 
-AidData Website: https://www.aiddata.org/data/aiddatas-geospatial-global-chinese-development-finance-dataset-version-3-0
-
-GitHub Repository: https://github.com/aiddata/gcdf-geospatial-data 
+The full dataset is publicly available via AidData’s <a href="https://www.aiddata.org/data/aiddatas-geospatial-global-chinese-development-finance-dataset-version-3-0">official website</a> and <a href="https://github.com/aiddata/gcdf-geospatial-data">GitHub repository</a>. The filtered datasets used in our analysis—<code>df_filtered</code> and <code>combined_geojson</code>—are available in this project’s repository.
 
 ## Methodology
 This research examines a targeted subset of the AidData dataset, focusing on high-value Chinese development projects with significant socioeconomic impact potential and geospatial precision. By establishing a monetary threshold of $10 million, we concentrate on substantial investments that typically generate measurable socioeconomic effects in recipient countries. Additionally, we restrict our analysis to projects classified under Official Development Assistance (ODA) and Other Official Flows (OOF) definitions, enabling us to examine how China's diplomatic strategy manifests through its development finance initiatives.
