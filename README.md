@@ -19,7 +19,7 @@ Our analysis draws on the <strong>AidData Global Chinese Development Finance Dat
 The full dataset is publicly available via AidData’s <a href="https://www.aiddata.org/data/aiddatas-geospatial-global-chinese-development-finance-dataset-version-3-0">official website</a> and <a href="https://github.com/aiddata/gcdf-geospatial-data">GitHub repository</a>. The filtered datasets used in our analysis—<code>df_filtered</code> and <code>combined_geojson</code>—are available in this project’s repository.
 
 <!-- Methodology -->
-<h2 id="abstract">Methodlogy</h2>
+<h2 id="abstract">Methodology</h2>
 This research examines a targeted subset of the AidData dataset, focusing on high-value Chinese development projects with significant socioeconomic impact potential and geospatial precision. By establishing a monetary threshold of $10 million, we concentrate on substantial investments that typically generate measurable socioeconomic effects in recipient countries. Additionally, we restrict our analysis to projects classified under Official Development Assistance (ODA) and Other Official Flows (OOF) definitions, enabling us to examine how China's diplomatic strategy manifests through its development finance initiatives.
 
 ## Scripts
@@ -58,8 +58,10 @@ The following structure outlines the organization of scripts, data files, and do
 
 <!-- Data Processing and Visualization -->
 <h2 id="abstract">Data Processing and Visualization</h2>
-The analysis utilizes R for data processing and visualization, employing packages such as sf for geospatial analysis, leaflet for interactive mapping, and Shiny for dashboard creation. The visualization consists of two main interactive dashboards over shiny apps and three interactive plots of financial terms:
-For interactive plots, it can be archived: https://ppol5202-final-project.netlify.app/
+Data Processing and Visualization</h2>
+The analysis leverages R for data processing and visualization, using packages such as <code>sf</code> for geospatial analysis, <code>leaflet</code> for interactive mapping, and <code>shiny</code> for dashboard development. The R workflow produces two interactive Shiny dashboards and three standalone plots that explore key financial characteristics of China's development lending.
+
+Archived versions of the interactive plots are also available via the <a href="https://ppol5202-final-project.netlify.app/">Netlify archive</a>.
 
 #### 1. Comprehensive Overview Dashboard
 - Interactive map displaying project locations with detailed popup information
@@ -74,7 +76,7 @@ For interactive plots, it can be archived: https://ppol5202-final-project.netlif
 - Temporal analysis showing investment trends over time
 - Custom filtering options for detailed regional and temporal analysis
 
-Both available at: https://yt583-tian.shinyapps.io/china-development/
+Both dashboards are available at the <a href="https://yt583-tian.shinyapps.io/china-development/">Shiny app deployment</a>.
 
 #### 3. Interest Rate and Grace Period Analysis
 - Interactive line plot tracking loan terms from 2000-2020
@@ -100,12 +102,12 @@ Both available at: https://yt583-tian.shinyapps.io/china-development/
 <!-- Req -->
 <h2 id="abstract">Requirements</h2>
 
-- R version 4.0 or higher
-- Required R packages: shiny, leaflet, dplyr, plotly, DT, sf, tidyr, ggplot2
-- Python version 3.8 or higher
-- Required Python packages: pandas, numpy, seaborn, plotly, bokeh, pip
-- Sufficient RAM for processing GeoJSON files
-- Internet connection for base map rendering
+- **R** version 4.0 or higher  
+  - Required packages: `shiny`, `leaflet`, `dplyr`, `plotly`, `DT`, `sf`, `tidyr`, `ggplot2`
+- **Python** version 3.8 or higher  
+  - Required packages: `pandas`, `numpy`, `bokeh`, `plotly`
+- At least 8 GB of RAM is recommended for processing spatial files such as `combined_geojson.rds`
+- Active internet connection is required to render interactive base maps in Shiny applications
 
 <!-- CONTRIBUTORS -->
 <h2 id="contributors">Contributors</h2>
