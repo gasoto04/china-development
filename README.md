@@ -1,7 +1,7 @@
 This repository includes the final project submission for Georgetown University's PPOL 5202: Data Visualization for Data Science, Fall 2024.
 
-<h1 align="center"> China's Global Development: A Geospatial and Economic Analysis</h1>
-<h3 align="center"> Visualizing Strategic Investments and Lending Trends (2000–2021)</h3>
+<h1 align="center"> China's Global Development Finance: A Geospatial and Economic Analysis</h1>
+<h3 align="center"> Visualizing Investment Distribution, Lending Terms, and Strategic Priorities (2000–2021)</h3>
 
 <p align="center">
 By Irene Chen, Gabriel Soto, Tian Tong, Vaishnavi Singh, Yixin Luo | Instructor: Prof. Rebecca Johnson
